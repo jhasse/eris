@@ -1768,7 +1768,8 @@ p_thread(Info *info) {                                          /* ... thread */
     pushpath(info, "[%d]", level++);
     WRITE_VALUE(eris_savestackidx(thread, ci->func), size_t);
     WRITE_VALUE(eris_savestackidx(thread, ci->top), size_t);
-    WRITE_VALUE(ci->nresults, int16_t);
+    /* CallInfo.nresults is only set for actual functions */
+    WRITE_VALUE(ttisfunction(ci->func) ? ci->nresults : 0, int16_t);
     WRITE_VALUE(ci->callstatus, uint8_t);
     if (ci->callstatus) {
       /* CallInfo.extra is used in two contexts: if L->status == LUA_YIELD and
