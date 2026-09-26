@@ -38,12 +38,15 @@
 
 
 /*
-** a macro to help the creation of a unique random seed when a state is
-** created; the seed is used to randomize hashes.
+** The seed for the hashes of strings. Not random, as Lua's own is (from
+** the time and where things are in memory), but the same every time and
+** on every platform: 'next' and 'pairs' go through a table's string keys
+** in an order that depends on it, and scripts have to come to the same
+** decisions everywhere. The randomness is only against keys picked to
+** collide on purpose, which trusted scripts don't do.
 */
 #if !defined(luai_makeseed)
-#include <time.h>
-#define luai_makeseed()		cast(unsigned int, time(NULL))
+#define luai_makeseed()		cast(unsigned int, 0)
 #endif
 
 
@@ -68,27 +71,6 @@ typedef struct LG {
 
 
 #define fromstate(L)	(cast(LX *, cast(lu_byte *, (L)) - offsetof(LX, l)))
-
-
-/*
-** Compute an initial seed as random as possible. Rely on Address Space
-** Layout Randomization (if present) to increase randomness..
-*/
-#define addbuff(b,p,e) \
-  { size_t t = cast(size_t, e); \
-    memcpy(b + p, &t, sizeof(t)); p += sizeof(t); }
-
-static unsigned int makeseed (lua_State *L) {
-  char buff[4 * sizeof(size_t)];
-  unsigned int h = luai_makeseed();
-  int p = 0;
-  addbuff(buff, p, L);  /* heap variable */
-  addbuff(buff, p, &h);  /* local variable */
-  addbuff(buff, p, luaO_nilobject);  /* global variable */
-  addbuff(buff, p, &lua_newstate);  /* public function */
-  lua_assert(p == sizeof(buff));
-  return luaS_hash(buff, p, h);
-}
 
 
 /*
@@ -308,7 +290,7 @@ LUA_API lua_State *lua_newstate (lua_Alloc f, void *ud) {
   g->frealloc = f;
   g->ud = ud;
   g->mainthread = L;
-  g->seed = makeseed(L);
+  g->seed = luai_makeseed();
   g->gcrunning = 0;  /* no GC while building state */
   g->GCestimate = 0;
   g->strt.size = g->strt.nuse = 0;

@@ -100,6 +100,44 @@ static lua_Integer intarith (lua_State *L, int op, lua_Integer v1,
 }
 
 
+/*
+** 'a' to the power of 'n' by squaring, for 'luaO_pow'
+*/
+static lua_Number powbysquaring (lua_Number a, lua_Unsigned n) {
+  lua_Number r = 1;
+  for (;;) {
+    if (n & 1)
+      r *= a;
+    n >>= 1;
+    if (n == 0)
+      return r;
+    a *= a;
+  }
+}
+
+
+/*
+** 'a' to the power of 'b', the same on every platform where 'b' is a
+** whole number up to 64 (or down to -64): it's multiplied out then, e.g.
+** 'a^2' is exactly 'a*a', whereas the C library's 'pow' may round
+** differently from one platform to the next. Any other 'b' still goes to
+** 'pow': multiplying out loses precision with every squaring, so for a
+** big 'b' it would be the same everywhere but further off.
+*/
+lua_Number luaO_pow (lua_Number a, lua_Number b) {
+  lua_Number n = l_mathop(fabs)(b);
+  lua_Number r;
+  if (l_mathop(floor)(n) != n || n > 64)
+    return l_mathop(pow)(a, b);  /* not a whole number, NaN or too big */
+  r = powbysquaring(a, (lua_Unsigned)n);
+  if (b >= 0)
+    return r;
+  /* 1 / a^n, unless a^n overflows while its inverse doesn't underflow */
+  return l_mathop(fabs)(r) == HUGE_VAL ? powbysquaring(1 / a, (lua_Unsigned)n)
+                                       : 1 / r;
+}
+
+
 static lua_Number numarith (lua_State *L, int op, lua_Number v1,
                                                   lua_Number v2) {
   switch (op) {

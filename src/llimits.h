@@ -281,9 +281,9 @@ typedef unsigned long Instruction;
   { (m) = l_mathop(fmod)(a,b); if ((m)*(b) < 0) (m) += (b); }
 #endif
 
-/* exponentiation */
+/* exponentiation, see 'luaO_pow' */
 #if !defined(luai_numpow)
-#define luai_numpow(L,a,b)      ((void)L, l_mathop(pow)(a,b))
+#define luai_numpow(L,a,b)      ((void)L, luaO_pow(a,b))
 #endif
 
 /* the others are quite standard operations */

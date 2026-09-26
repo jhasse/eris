@@ -239,35 +239,14 @@ typedef unsigned int IdxT;
 /*
 ** Produce a "random" 'unsigned int' to randomize pivot choice. This
 ** macro is used only when 'sort' detects a big imbalance in the result
-** of a partition. (If you don't want/need this "randomness", ~0 is a
-** good choice.)
+** of a partition. Always the same rather than from 'clock' and 'time',
+** so that sorting comes out the same every time and on every platform,
+** even with elements that compare equal: scripts have to come to the
+** same decisions everywhere.
 */
-#if !defined(l_randomizePivot)		/* { */
-
-#include <time.h>
-
-/* size of 'e' measured in number of 'unsigned int's */
-#define sof(e)		(sizeof(e) / sizeof(unsigned int))
-
-/*
-** Use 'time' and 'clock' as sources of "randomness". Because we don't
-** know the types 'clock_t' and 'time_t', we cannot cast them to
-** anything without risking overflows. A safe way to use their values
-** is to copy them to an array of a known type and use the array values.
-*/
-static unsigned int l_randomizePivot (void) {
-  clock_t c = clock();
-  time_t t = time(NULL);
-  unsigned int buff[sof(c) + sof(t)];
-  unsigned int i, rnd = 0;
-  memcpy(buff, &c, sof(c) * sizeof(unsigned int));
-  memcpy(buff + sof(c), &t, sof(t) * sizeof(unsigned int));
-  for (i = 0; i < sof(buff); i++)
-    rnd += buff[i];
-  return rnd;
-}
-
-#endif					/* } */
+#if !defined(l_randomizePivot)
+#define l_randomizePivot()	(~0u)
+#endif
 
 
 /* arrays larger than 'RANLIMIT' may use randomized pivots */

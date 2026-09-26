@@ -10,7 +10,7 @@
 #include "lprefix.h"
 
 
-#include <stdlib.h>
+#include <stdint.h>
 #include <math.h>
 
 #include "lua.h"
@@ -21,19 +21,6 @@
 
 #undef PI
 #define PI	(l_mathop(3.141592653589793238462643383279502884))
-
-
-#if !defined(l_rand)		/* { */
-#if defined(LUA_USE_POSIX)
-#define l_rand()	random()
-#define l_srand(x)	srandom(x)
-#define L_RANDMAX	2147483647	/* (2^31 - 1), following POSIX */
-#else
-#define l_rand()	rand()
-#define l_srand(x)	srand(x)
-#define L_RANDMAX	RAND_MAX
-#endif
-#endif				/* } */
 
 
 static int math_abs (lua_State *L) {
@@ -240,16 +227,76 @@ static int math_max (lua_State *L) {
 }
 
 /*
-** This function uses 'double' (instead of 'lua_Number') to ensure that
-** all bits from 'l_rand' can be represented, and that 'RANDMAX + 1.0'
-** will keep full precision (ensuring that 'r' is always less than 1.0.)
+** Pseudo-random numbers with xoshiro256**, as in Lua 5.4, rather than
+** with the C library's 'rand' or 'random': those differ from one
+** platform to the next, and there's only the one of them for the whole
+** program. So each state has its own, seeded the same way every time,
+** and scripts come to the same decisions everywhere.
 */
+
+/* the generator's state, kept in a userdata that is an upvalue of
+** 'random' and 'randomseed' */
+typedef struct RanState {
+  uint64_t s[4];
+} RanState;
+
+
+/* rotate left 'x' by 'n' bits */
+static uint64_t rotl (uint64_t x, int n) {
+  return (x << n) | (x >> (64 - n));
+}
+
+
+static uint64_t nextrand (uint64_t *s) {
+  uint64_t res = rotl(s[1] * 5, 7) * 9;
+  uint64_t t = s[1] << 17;
+  s[2] ^= s[0];
+  s[3] ^= s[1];
+  s[1] ^= s[2];
+  s[0] ^= s[3];
+  s[2] ^= t;
+  s[3] = rotl(s[3], 45);
+  return res;
+}
+
+
+/* a float in [0, 1) from the 53 most significant bits of 'x' */
+static lua_Number I2d (uint64_t x) {
+  return (lua_Number)(x >> 11) * (l_mathop(1.0) / l_mathop(9007199254740992.0));
+}
+
+
+/*
+** Project the random integer 'ran' into the interval [0, n], without
+** bias: 'ran' is cut down to the smallest (2^b - 1) not smaller than
+** 'n', and drawn anew for as long as it's still bigger than 'n'.
+*/
+static lua_Unsigned project (lua_Unsigned ran, lua_Unsigned n,
+                             RanState *state) {
+  if ((n & (n + 1)) == 0)  /* is 'n + 1' a power of 2? */
+    return ran & n;  /* no bias */
+  else {
+    lua_Unsigned lim = n;
+    lim |= (lim >> 1);
+    lim |= (lim >> 2);
+    lim |= (lim >> 4);
+    lim |= (lim >> 8);
+    lim |= (lim >> 16);
+    lim |= (lim >> 32);
+    while ((ran &= lim) > n)  /* not inside [0, n]? try again */
+      ran = (lua_Unsigned)nextrand(state->s);
+    return ran;
+  }
+}
+
+
 static int math_random (lua_State *L) {
   lua_Integer low, up;
-  double r = (double)l_rand() * (1.0 / ((double)L_RANDMAX + 1.0));
+  RanState *g = (RanState *)lua_touserdata(L, lua_upvalueindex(1));
+  uint64_t rv = nextrand(g->s);
   switch (lua_gettop(L)) {  /* check number of arguments */
     case 0: {  /* no arguments */
-      lua_pushnumber(L, (lua_Number)r);  /* Number between 0 and 1 */
+      lua_pushnumber(L, I2d(rv));  /* Number between 0 and 1 */
       return 1;
     }
     case 1: {  /* only upper limit */
@@ -266,18 +313,46 @@ static int math_random (lua_State *L) {
   }
   /* random integer in the interval [low, up] */
   luaL_argcheck(L, low <= up, 1, "interval is empty");
-  luaL_argcheck(L, low >= 0 || up <= LUA_MAXINTEGER + low, 1,
-                   "interval too large");
-  r *= (double)(up - low) + 1.0;
-  lua_pushinteger(L, (lua_Integer)r + low);
+  lua_pushinteger(L, (lua_Integer)(project((lua_Unsigned)rv,
+                                           (lua_Unsigned)up - (lua_Unsigned)low,
+                                           g) + (lua_Unsigned)low));
   return 1;
 }
 
 
+static void setseed (uint64_t *state, lua_Unsigned n) {
+  int i;
+  state[0] = (uint64_t)n;
+  state[1] = 0xff;  /* avoid a zero state */
+  state[2] = 0;
+  state[3] = 0;
+  for (i = 0; i < 16; i++)
+    nextrand(state);  /* discard initial values to "spread" seed */
+}
+
+
 static int math_randomseed (lua_State *L) {
-  l_srand((unsigned int)(lua_Integer)luaL_checknumber(L, 1));
-  (void)l_rand(); /* discard first value to avoid undesirable correlations */
+  RanState *g = (RanState *)lua_touserdata(L, lua_upvalueindex(1));
+  setseed(g->s, (lua_Unsigned)luaL_checkinteger(L, 1));
   return 0;
+}
+
+
+static const luaL_Reg randfuncs[] = {
+  {"random", math_random},
+  {"randomseed", math_randomseed},
+  {NULL, NULL}
+};
+
+
+/*
+** Register 'random' and 'randomseed' into the table on top of the
+** stack, sharing a new generator seeded with 0
+*/
+static void setrandfunc (lua_State *L) {
+  RanState *state = (RanState *)lua_newuserdata(L, sizeof(RanState));
+  setseed(state->s, 0);
+  luaL_setfuncs(L, randfuncs, 1);
 }
 
 
@@ -367,8 +442,6 @@ static const luaL_Reg mathlib[] = {
   {"min",   math_min},
   {"modf",   math_modf},
   {"rad",   math_rad},
-  {"random",     math_random},
-  {"randomseed", math_randomseed},
   {"sin",   math_sin},
   {"sqrt",  math_sqrt},
   {"tan",   math_tan},
@@ -405,6 +478,7 @@ LUAMOD_API int luaopen_math (lua_State *L) {
   lua_setfield(L, -2, "maxinteger");
   lua_pushinteger(L, LUA_MININTEGER);
   lua_setfield(L, -2, "mininteger");
+  setrandfunc(L);
   return 1;
 }
 
