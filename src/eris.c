@@ -28,13 +28,6 @@ THE SOFTWARE.
 #include <stdio.h>
 #include <string.h>
 
-/* Not using stdbool because Visual Studio lives in the past... */
-#ifndef __cplusplus
-typedef int bool;
-#define false 0
-#define true 1
-#endif
-
 /* Mark us as part of the Lua core to get access to what we need. */
 #define LUA_CORE
 
