@@ -64,7 +64,7 @@ function test(rootobj)
   if passed == total then
     print("All tests passed.")
   else
-    print(passed .. "/" .. total .. " tests passed.")
+    error(passed .. "/" .. total .. " tests passed.")
   end
 
   if rootobj.testlife then

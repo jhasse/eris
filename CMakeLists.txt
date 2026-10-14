@@ -15,4 +15,17 @@ if(NOT MSVC)
 endif()
 if(UNIX)
 	target_compile_definitions(lua PRIVATE LUA_USE_POSIX) # e.g. mkstemp instead of tmpnam
+	target_link_libraries(lua PUBLIC m)
+endif()
+
+include(CTest)
+if(BUILD_TESTING)
+	foreach(test IN ITEMS persist unpersist)
+		add_executable(${test} test/${test}.c)
+		target_link_libraries(${test} PRIVATE lua)
+		add_test(NAME ${test} COMMAND ${test} "${CMAKE_CURRENT_SOURCE_DIR}/test/${test}.lua"
+		                              "${CMAKE_CURRENT_BINARY_DIR}/test.eris")
+	endforeach()
+	set_tests_properties(persist PROPERTIES FIXTURES_SETUP eris_data)
+	set_tests_properties(unpersist PROPERTIES FIXTURES_REQUIRED eris_data)
 endif()

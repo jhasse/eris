@@ -58,7 +58,7 @@ static int LUAF_onerror(lua_State *L)
 
 int main(int argc, char** argv)
 {
-	if (argc < 2) {
+	if (argc < 3) {
 		printf("Usage: unpersist <script> <filename>\n");
 		return 1;
 	}
@@ -74,11 +74,15 @@ int main(int argc, char** argv)
 	lua_register(L, "onerror", LUAF_onerror);
 
 	lua_pushcfunction(L, LUAF_onerror);
-	luaL_loadfile(L, argv[1]);
-	lua_pushstring(L, argv[2]);
-	lua_pcall(L,1,0,1);
+	int status = luaL_loadfile(L, argv[1]);
+	if (status == LUA_OK) {
+		lua_pushstring(L, argv[2]);
+		status = lua_pcall(L,1,0,1);
+	} else {
+		LUAF_onerror(L);
+	}
 
 	lua_close(L);
 
-	return 0;
+	return status == LUA_OK ? EXIT_SUCCESS : EXIT_FAILURE;
 }
