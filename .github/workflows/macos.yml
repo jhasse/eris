@@ -1,0 +1,16 @@
+name: macOS
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup
+        run: pip install cja
+      - name: Test
+        run: cja test
